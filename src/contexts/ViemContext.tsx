@@ -71,19 +71,42 @@ export function ViemProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [transferEvents, setTransferEvents] = useState<any[]>([]);
 
-  // 创建客户端实例
-  const publicClient = createPublicClient({
-    chain: mainnet,
-    transport: http(),
-  });
+  // 根据当前链ID获取对应的链配置
+  const getChainConfig = (chainId: number) => {
+    switch (chainId) {
+      case 1:
+        return mainnet;
+      case 11155111:
+        return sepolia;
+      case 8453:
+        return base;
+      default:
+        return mainnet; // 默认使用主网
+    }
+  };
 
-  let walletClient: any;
-  if (typeof window !== "undefined" && window.ethereum) {
-    walletClient = createWalletClient({
-      chain: mainnet,
-      transport: custom(window.ethereum),
+  // 创建客户端的函数
+  const createClients = (targetChainId?: number) => {
+    const chain = targetChainId ? getChainConfig(targetChainId) : mainnet;
+
+    const publicClient = createPublicClient({
+      chain: chain,
+      transport: http(),
     });
-  }
+
+    let walletClient: any;
+    if (typeof window !== "undefined" && window.ethereum) {
+      walletClient = createWalletClient({
+        chain: chain,
+        transport: custom(window.ethereum),
+      });
+    }
+
+    return { publicClient, walletClient };
+  };
+
+  // 初始客户端实例
+  const { publicClient, walletClient } = createClients(chainId);
 
   // 检查钱包连接状态
   const checkConnection = async () => {
@@ -100,10 +123,11 @@ export function ViemProvider({ children }: { children: ReactNode }) {
           const chainId = await window.ethereum.request({
             method: "eth_chainId",
           });
-          setChainId(parseInt(chainId, 16));
+          const currentChainId = parseInt(chainId, 16);
+          setChainId(currentChainId);
 
-          // 获取余额
-          await updateBalance(accounts[0] as Address);
+          // 使用正确的链ID获取余额
+          await updateBalance(accounts[0] as Address, currentChainId);
         }
         console.log("checkConnection", accounts, chainId);
       } catch (error) {
@@ -113,12 +137,26 @@ export function ViemProvider({ children }: { children: ReactNode }) {
   };
 
   // 更新余额
-  const updateBalance = async (accountAddress: Address) => {
+  const updateBalance = async (
+    accountAddress: Address,
+    targetChainId?: number
+  ) => {
     try {
+      // 使用指定链ID或当前链ID获取余额
+      const currentChainId = targetChainId || chainId;
+      if (!currentChainId) {
+        console.warn("链ID未设置，无法获取余额");
+        return;
+      }
+
+      console.log("更新余额 - 链ID:", currentChainId, "地址:", accountAddress);
+      const { publicClient } = createClients(currentChainId);
       const balance = await publicClient.getBalance({
         address: accountAddress,
       });
-      setBalance(formatEther(balance));
+      const formattedBalance = formatEther(balance);
+      console.log("获取到余额:", formattedBalance, "ETH");
+      setBalance(formattedBalance);
     } catch (error) {
       console.error("获取余额失败:", error);
     }
@@ -141,10 +179,11 @@ export function ViemProvider({ children }: { children: ReactNode }) {
           const chainId = await window.ethereum.request({
             method: "eth_chainId",
           });
-          setChainId(parseInt(chainId, 16));
+          const currentChainId = parseInt(chainId, 16);
+          setChainId(currentChainId);
 
-          // 获取余额
-          await updateBalance(accounts[0] as Address);
+          // 使用正确的链ID获取余额
+          await updateBalance(accounts[0] as Address, currentChainId);
         }
         console.log("walletClient", accounts, chainId);
       } catch (error) {
@@ -175,6 +214,11 @@ export function ViemProvider({ children }: { children: ReactNode }) {
           params: [{ chainId: `0x${targetChainId.toString(16)}` }],
         });
         setChainId(targetChainId);
+
+        // 切换链后立即更新余额
+        if (address) {
+          await updateBalance(address, targetChainId);
+        }
       } catch (error) {
         console.error("切换链失败:", error);
       }
@@ -186,10 +230,14 @@ export function ViemProvider({ children }: { children: ReactNode }) {
     to: Address,
     amount: string
   ): Promise<string | null> => {
-    if (!address || !walletClient) return null;
+    if (!address || !chainId) return null;
 
     try {
       setIsLoading(true);
+
+      // 使用当前链的客户端
+      const { publicClient, walletClient } = createClients(chainId);
+
       const hash = await walletClient.sendTransaction({
         to,
         value: parseEther(amount),
@@ -200,7 +248,7 @@ export function ViemProvider({ children }: { children: ReactNode }) {
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
       // 更新余额
-      await updateBalance(address);
+      await updateBalance(address, chainId);
 
       return hash;
     } catch (error) {
@@ -217,10 +265,13 @@ export function ViemProvider({ children }: { children: ReactNode }) {
     to: Address,
     amount: string
   ): Promise<string | null> => {
-    if (!address || !walletClient) return null;
+    if (!address || !chainId) return null;
 
     try {
       setIsLoading(true);
+
+      // 使用当前链的客户端
+      const { publicClient, walletClient } = createClients(chainId);
 
       const hash = await walletClient.writeContract({
         address: tokenAddress,
@@ -244,9 +295,12 @@ export function ViemProvider({ children }: { children: ReactNode }) {
 
   // 监听Transfer事件
   const watchTransferEvents = (tokenAddress?: Address) => {
-    if (!publicClient) return;
+    if (!tokenAddress || !chainId) return;
 
     try {
+      // 使用当前链的客户端
+      const { publicClient } = createClients(chainId);
+
       const unwatch = publicClient.watchContractEvent({
         address: tokenAddress,
         abi: erc20Abi,
@@ -262,6 +316,13 @@ export function ViemProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // 监听链ID变化，重新创建客户端
+  useEffect(() => {
+    if (chainId && address) {
+      updateBalance(address, chainId);
+    }
+  }, [chainId, address]);
+
   // 监听账户变化
   useEffect(() => {
     checkConnection();
@@ -272,14 +333,17 @@ export function ViemProvider({ children }: { children: ReactNode }) {
           disconnectWallet();
         } else {
           setAddress(accounts[0] as Address);
-          updateBalance(accounts[0] as Address);
+          if (chainId) {
+            updateBalance(accounts[0] as Address, chainId);
+          }
         }
       };
 
       const handleChainChanged = (chainId: string) => {
-        setChainId(parseInt(chainId, 16));
+        const newChainId = parseInt(chainId, 16);
+        setChainId(newChainId);
         if (address) {
-          updateBalance(address);
+          updateBalance(address, newChainId);
         }
       };
 

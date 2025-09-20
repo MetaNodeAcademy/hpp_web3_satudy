@@ -6,7 +6,7 @@ import { CurrencyDollarIcon } from "@heroicons/react/24/solid";
 import { commonTokens } from "@/constants/erc20Abi";
 
 export function ERC20Transfer() {
-  const { sendERC20Transfer, isLoading } = useViem();
+  const { sendERC20Transfer, isLoading, chainId } = useViem();
   const [tokenAddress, setTokenAddress] = useState("");
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
@@ -147,12 +147,24 @@ export function ERC20Transfer() {
               交易哈希: {txHash}
             </p>
             <a
-              href={`https://etherscan.io/tx/${txHash}`}
+              href={`https://${
+                chainId === 11155111
+                  ? "sepolia."
+                  : chainId === 8453
+                  ? "basescan.org/tx/"
+                  : "etherscan.io/tx/"
+              }${txHash}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-blue-500 hover:underline"
             >
-              在Etherscan上查看
+              在
+              {chainId === 11155111
+                ? "Sepolia Etherscan"
+                : chainId === 8453
+                ? "BaseScan"
+                : "Etherscan"}
+              上查看
             </a>
           </div>
         )}
