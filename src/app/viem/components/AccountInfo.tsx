@@ -1,136 +1,116 @@
 "use client";
 
+import React, { useState, useEffect } from "react";
 import { useViem } from "@/contexts/ViemContext";
-import { LinkIcon, WalletIcon } from "@heroicons/react/24/solid";
+import { formatEther, formatUnits } from "viem";
 
-export function AccountInfo() {
-  const {
-    isConnected,
-    address,
-    chainId,
-    balance,
-    disconnectWallet,
-    switchChain,
-  } = useViem();
+interface AccountInfoProps {
+  address?: `0x${string}`;
+}
 
-  if (!isConnected || !address) {
-    return null;
-  }
+export const AccountInfo: React.FC<AccountInfoProps> = ({ address }) => {
+  const { publicClient } = useViem();
+  const [accountInfo, setAccountInfo] = useState<{
+    balance: string;
+    nonce: number;
+    address: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const formatAddress = (addr: string) => {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-  };
+  const fetchAccountInfo = async (accountAddress: `0x${string}`) => {
+    try {
+      setLoading(true);
+      setError(null);
 
-  const getChainName = (chainId: number) => {
-    switch (chainId) {
-      case 1:
-        return "Ethereum Mainnet";
-      case 11155111:
-        return "Sepolia Testnet";
-      case 8453:
-        return "Base";
-      default:
-        return `Chain ${chainId}`;
+      // 获取ETH余额
+      const balance = await publicClient.getBalance({
+        address: accountAddress,
+      });
+
+      // 获取nonce
+      const nonce = await publicClient.getTransactionCount({
+        address: accountAddress,
+      });
+
+      setAccountInfo({
+        balance: formatEther(balance),
+        nonce,
+        address: accountAddress,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "获取账户信息失败");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSwitchChain = async (targetChainId: number) => {
-    try {
-      await switchChain(targetChainId);
-    } catch (error) {
-      console.error("切换链失败:", error);
+  useEffect(() => {
+    if (address) {
+      fetchAccountInfo(address);
+    }
+  }, [address]);
+
+  const handleRefresh = () => {
+    if (address) {
+      fetchAccountInfo(address);
     }
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6 border border-gray-300 rounded-lg bg-white shadow-sm">
-      <div className="flex items-center gap-3">
-        <WalletIcon className="w-6 h-6 text-blue-500" />
-        <h2 className="text-xl font-bold text-gray-800">账户信息</h2>
-      </div>
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <h2 className="text-xl font-bold mb-4">账户信息</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-600">钱包地址</label>
-          <div className="flex items-center gap-2">
-            <code className="bg-gray-100 px-3 py-2 rounded text-sm font-mono">
-              {formatAddress(address)}
-            </code>
-            <button
-              onClick={() => navigator.clipboard.writeText(address)}
-              className="p-1 hover:bg-gray-100 rounded"
-              title="复制地址"
-            >
-              <LinkIcon className="w-4 h-4 text-gray-500" />
-            </button>
+      {!address && (
+        <div className="text-gray-500 text-center py-8">请先连接钱包</div>
+      )}
+
+      {address && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <span className="font-medium">地址:</span>
+            <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">
+              {address}
+            </span>
           </div>
-        </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-600">余额</label>
-          <div className="text-lg font-semibold text-gray-800">
-            {balance ? `${parseFloat(balance).toFixed(4)} ETH` : "加载中..."}
-          </div>
-        </div>
+          {loading && (
+            <div className="text-center py-4">
+              <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <p className="mt-2 text-gray-600">加载中...</p>
+            </div>
+          )}
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-600">当前网络</label>
-          <div className="text-sm text-gray-800">
-            {chainId ? getChainName(chainId) : "未知"}
-          </div>
-        </div>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-4">
+              <p className="text-red-600">{error}</p>
+            </div>
+          )}
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-600">连接状态</label>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            <span className="text-sm text-green-600 font-medium">已连接</span>
-          </div>
-        </div>
-      </div>
+          {accountInfo && !loading && (
+            <>
+              <div className="flex justify-between items-center">
+                <span className="font-medium">ETH余额:</span>
+                <span className="text-lg font-bold text-blue-600">
+                  {accountInfo.balance} ETH
+                </span>
+              </div>
 
-      <div className="flex flex-col gap-3">
-        <h3 className="text-lg font-semibold text-gray-800">切换网络</h3>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => handleSwitchChain(1)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              chainId === 1
-                ? "bg-blue-500 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            以太坊主网
-          </button>
-          <button
-            onClick={() => handleSwitchChain(11155111)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              chainId === 11155111
-                ? "bg-blue-500 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            Sepolia测试网
-          </button>
-          <button
-            onClick={() => handleSwitchChain(8453)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              chainId === 8453
-                ? "bg-blue-500 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            Base
-          </button>
-        </div>
-      </div>
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Nonce:</span>
+                <span className="text-lg font-bold">{accountInfo.nonce}</span>
+              </div>
 
-      <button
-        onClick={disconnectWallet}
-        className="w-full bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200"
-      >
-        断开连接
-      </button>
+              <button
+                onClick={handleRefresh}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+              >
+                刷新信息
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
-}
+};

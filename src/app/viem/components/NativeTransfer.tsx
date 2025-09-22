@@ -1,143 +1,148 @@
 "use client";
 
+import React, { useState } from "react";
 import { useViem } from "@/contexts/ViemContext";
-import { useState } from "react";
-import { ArrowRightIcon } from "@heroicons/react/24/solid";
+import { parseEther, formatEther } from "viem";
 
-export function NativeTransfer() {
-  const { sendNativeTransfer, isLoading, balance, chainId } = useViem();
+interface NativeTransferProps {
+  fromAddress?: `0x${string}`;
+}
+
+export const NativeTransfer: React.FC<NativeTransferProps> = ({
+  fromAddress,
+}) => {
+  const { publicClient, walletClient } = useViem();
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
+  const [loading, setLoading] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setTxHash(null);
 
-    if (!toAddress || !amount) {
+    if (!fromAddress || !toAddress || !amount) {
       setError("请填写所有字段");
       return;
     }
 
-    if (parseFloat(amount) <= 0) {
-      setError("转账金额必须大于0");
-      return;
-    }
-
-    if (balance && parseFloat(amount) > parseFloat(balance)) {
-      setError("余额不足");
+    if (!walletClient) {
+      setError("请先连接钱包");
       return;
     }
 
     try {
-      const hash = await sendNativeTransfer(toAddress as `0x${string}`, amount);
-      if (hash) {
-        setTxHash(hash);
+      setLoading(true);
+      setError(null);
+      setTxHash(null);
+
+      // 获取账户信息
+      const accounts = await walletClient.requestAddresses();
+      console.log("accounts", accounts);
+      if (!accounts[0]) {
+        throw new Error("未找到钱包账户");
+      }
+
+      // 构建交易参数
+      const value = parseEther(amount);
+
+      // 获取gas估算
+      const gasEstimate = await publicClient?.estimateGas({
+        account: accounts[0],
+        to: toAddress as `0x${string}`,
+        value,
+      });
+
+      // 发送交易
+      const hash = await walletClient.sendTransaction({
+        account: accounts[0],
+        to: toAddress as `0x${string}`,
+        value,
+        gas: gasEstimate,
+      });
+
+      setTxHash(hash);
+
+      // 等待交易确认
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
+
+      if (receipt?.status === "success") {
+        // 清空表单
         setToAddress("");
         setAmount("");
       } else {
-        setError("转账失败");
+        setError("交易失败");
       }
     } catch (err) {
-      setError("转账失败: " + (err as Error).message);
+      setError(err instanceof Error ? err.message : "转账失败");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="p-6 border border-gray-300 rounded-lg bg-white shadow-sm">
-      <div className="flex items-center gap-3 mb-6">
-        <ArrowRightIcon className="w-6 h-6 text-green-500" />
-        <h2 className="text-xl font-bold text-gray-800">ETH转账</h2>
-      </div>
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <h2 className="text-xl font-bold mb-4">ETH转账</h2>
 
-      <form onSubmit={handleTransfer} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            接收地址
-          </label>
-          <input
-            type="text"
-            value={toAddress}
-            onChange={(e) => setToAddress(e.target.value)}
-            placeholder="0x..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            disabled={isLoading}
-          />
-        </div>
+      {!fromAddress && (
+        <div className="text-gray-500 text-center py-8">请先连接钱包</div>
+      )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            转账金额 (ETH)
-          </label>
-          <div className="relative">
+      {fromAddress && (
+        <form onSubmit={handleTransfer} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              接收地址
+            </label>
+            <input
+              type="text"
+              value={toAddress}
+              onChange={(e) => setToAddress(e.target.value)}
+              placeholder="0x..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              转账金额 (ETH)
+            </label>
             <input
               type="number"
-              step="0.0001"
+              step="0.000001"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.001"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={isLoading}
+              placeholder="0.0"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
             />
-            <div className="absolute right-3 top-2 text-sm text-gray-500">
-              ETH
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-4">
+              <p className="text-red-600">{error}</p>
             </div>
-          </div>
-          {balance && (
-            <p className="text-sm text-gray-500 mt-1">
-              可用余额: {parseFloat(balance).toFixed(4)} ETH
-            </p>
           )}
-        </div>
 
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-600">{error}</p>
-          </div>
-        )}
-
-        {txHash && (
-          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-sm text-green-600 mb-2">转账成功！</p>
-            <p className="text-xs text-green-500 break-all">
-              交易哈希: {txHash}
-            </p>
-            <a
-              href={`https://${
-                chainId === 11155111
-                  ? "sepolia."
-                  : chainId === 8453
-                  ? "basescan.org/tx/"
-                  : "etherscan.io/tx/"
-              }${txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-blue-500 hover:underline"
-            >
-              在
-              {chainId === 11155111
-                ? "Sepolia Etherscan"
-                : chainId === 8453
-                ? "BaseScan"
-                : "Etherscan"}
-              上查看
-            </a>
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={isLoading || !toAddress || !amount}
-          className="w-full bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-        >
-          {isLoading && (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+          {txHash && (
+            <div className="bg-green-50 border border-green-200 rounded-md p-4">
+              <p className="text-green-600 mb-2">交易成功!</p>
+              <p className="text-sm text-gray-600">
+                交易哈希: <span className="font-mono">{txHash}</span>
+              </p>
+            </div>
           )}
-          {isLoading ? "转账中..." : "发送转账"}
-        </button>
-      </form>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading ? "处理中..." : "发送转账"}
+          </button>
+        </form>
+      )}
     </div>
   );
-}
+};

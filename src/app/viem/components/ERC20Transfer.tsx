@@ -1,185 +1,302 @@
 "use client";
 
+import React, { useState, useEffect } from "react";
 import { useViem } from "@/contexts/ViemContext";
-import { useState } from "react";
-import { CurrencyDollarIcon } from "@heroicons/react/24/solid";
-import { commonTokens } from "@/constants/erc20Abi";
+import { erc20Abi } from "@/constants/erc20Abi";
+import { formatUnits, parseUnits, getContract, encodeFunctionData } from "viem";
 
-export function ERC20Transfer() {
-  const { sendERC20Transfer, isLoading, chainId } = useViem();
-  const [tokenAddress, setTokenAddress] = useState("");
+interface ERC20TransferProps {
+  fromAddress?: `0x${string}`;
+  onTokenInfoUpdate?: (info: { symbol: string; decimals: number }) => void;
+  onContractAddressChange?: (address: `0x${string}`) => void;
+}
+
+export const ERC20Transfer: React.FC<ERC20TransferProps> = ({
+  fromAddress,
+  onTokenInfoUpdate,
+  onContractAddressChange,
+}) => {
+  const { publicClient, walletClient } = useViem();
+  const [contractAddress, setContractAddress] = useState("");
+  const [tokenInfo, setTokenInfo] = useState<{
+    name: string;
+    symbol: string;
+    decimals: number;
+    totalSupply: string;
+    balance: string;
+  } | null>(null);
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
+  const [loading, setLoading] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchTokenInfo = async (address: `0x${string}`) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const contract = getContract({
+        address,
+        abi: erc20Abi,
+        client: publicClient,
+      });
+
+      // 并行获取代币信息
+      const [name, symbol, decimals, totalSupply, balance] = await Promise.all([
+        contract.read.name(),
+        contract.read.symbol(),
+        contract.read.decimals(),
+        contract.read.totalSupply(),
+        fromAddress ? contract.read.balanceOf([fromAddress]) : BigInt(0),
+      ]);
+
+      const tokenInfoData = {
+        name: name as string,
+        symbol: symbol as string,
+        decimals: Number(decimals),
+        totalSupply: formatUnits(totalSupply as bigint, Number(decimals)),
+        balance: fromAddress
+          ? formatUnits(balance as bigint, Number(decimals))
+          : "0",
+      };
+
+      setTokenInfo(tokenInfoData);
+
+      // 通知父组件代币信息更新
+      if (onTokenInfoUpdate) {
+        onTokenInfoUpdate({
+          symbol: tokenInfoData.symbol,
+          decimals: tokenInfoData.decimals,
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "获取代币信息失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setTxHash(null);
 
-    if (!tokenAddress || !toAddress || !amount) {
+    if (
+      !fromAddress ||
+      !toAddress ||
+      !amount ||
+      !contractAddress ||
+      !tokenInfo
+    ) {
       setError("请填写所有字段");
       return;
     }
 
-    if (parseFloat(amount) <= 0) {
-      setError("转账金额必须大于0");
+    if (!walletClient) {
+      setError("请先连接钱包");
       return;
     }
 
     try {
-      const hash = await sendERC20Transfer(
-        tokenAddress as `0x${string}`,
-        toAddress as `0x${string}`,
-        amount
-      );
-      if (hash) {
-        setTxHash(hash);
+      setLoading(true);
+      setError(null);
+      setTxHash(null);
+
+      // 获取账户信息
+      const accounts = await walletClient.requestAddresses();
+      if (!accounts[0]) {
+        throw new Error("未找到钱包账户");
+      }
+
+      const contract = getContract({
+        address: contractAddress as `0x${string}`,
+        abi: erc20Abi,
+        client: walletClient,
+      });
+
+      // 计算转账数量
+      const transferAmount = parseUnits(amount, tokenInfo.decimals);
+
+      // 编码transfer函数调用
+      const transferData = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [toAddress as `0x${string}`, transferAmount],
+      });
+
+      // 获取gas估算
+      const gasEstimate = await publicClient.estimateGas({
+        account: accounts[0],
+        to: contractAddress as `0x${string}`,
+        data: transferData,
+      });
+
+      console.log("transferData", transferData, gasEstimate);
+      // 发送交易
+      const hash = await walletClient.sendTransaction({
+        account: accounts[0],
+        to: contractAddress as `0x${string}`,
+        data: transferData,
+        gas: gasEstimate,
+      });
+
+      setTxHash(hash);
+
+      // 等待交易确认
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+      if (receipt.status === "success") {
+        // 清空表单并刷新代币信息
         setToAddress("");
         setAmount("");
+        fetchTokenInfo(contractAddress as `0x${string}`);
       } else {
-        setError("转账失败");
+        setError("交易失败");
       }
     } catch (err) {
-      setError("转账失败: " + (err as Error).message);
+      setError(err instanceof Error ? err.message : "转账失败");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleTokenSelect = (tokenAddr: string) => {
-    setTokenAddress(tokenAddr);
+  const handleFetchTokenInfo = () => {
+    if (contractAddress) {
+      const address = contractAddress as `0x${string}`;
+      fetchTokenInfo(address);
+
+      // 通知父组件合约地址变化
+      if (onContractAddressChange) {
+        onContractAddressChange(address);
+      }
+    }
   };
 
   return (
-    <div className="p-6 border border-gray-300 rounded-lg bg-white shadow-sm">
-      <div className="flex items-center gap-3 mb-6">
-        <CurrencyDollarIcon className="w-6 h-6 text-purple-500" />
-        <h2 className="text-xl font-bold text-gray-800">ERC-20代币转账</h2>
-      </div>
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <h2 className="text-xl font-bold mb-4">ERC-20代币转账</h2>
 
-      <form onSubmit={handleTransfer} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            代币合约地址
-          </label>
-          <input
-            type="text"
-            value={tokenAddress}
-            onChange={(e) => setTokenAddress(e.target.value)}
-            placeholder="0x..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            disabled={isLoading}
-          />
-          <div className="mt-2">
-            <p className="text-sm text-gray-600 mb-2">常用代币:</p>
-            <div className="flex flex-wrap gap-2">
+      {!fromAddress && (
+        <div className="text-gray-500 text-center py-8">请先连接钱包</div>
+      )}
+
+      {fromAddress && (
+        <div className="space-y-6">
+          {/* 代币合约地址输入 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              代币合约地址
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={contractAddress}
+                onChange={(e) => setContractAddress(e.target.value)}
+                placeholder="0x..."
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
               <button
                 type="button"
-                onClick={() => handleTokenSelect(commonTokens.USDT)}
-                className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+                onClick={handleFetchTokenInfo}
+                disabled={!contractAddress || loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
               >
-                USDT
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTokenSelect(commonTokens.USDC)}
-                className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
-              >
-                USDC
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTokenSelect(commonTokens.DAI)}
-                className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
-              >
-                DAI
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTokenSelect(commonTokens.WETH)}
-                className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
-              >
-                WETH
+                查询
               </button>
             </div>
           </div>
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            接收地址
-          </label>
-          <input
-            type="text"
-            value={toAddress}
-            onChange={(e) => setToAddress(e.target.value)}
-            placeholder="0x..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            disabled={isLoading}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            转账数量
-          </label>
-          <input
-            type="number"
-            step="0.0001"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="1.0"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            disabled={isLoading}
-          />
-        </div>
-
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-600">{error}</p>
-          </div>
-        )}
-
-        {txHash && (
-          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-sm text-green-600 mb-2">转账成功！</p>
-            <p className="text-xs text-green-500 break-all">
-              交易哈希: {txHash}
-            </p>
-            <a
-              href={`https://${
-                chainId === 11155111
-                  ? "sepolia."
-                  : chainId === 8453
-                  ? "basescan.org/tx/"
-                  : "etherscan.io/tx/"
-              }${txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-blue-500 hover:underline"
-            >
-              在
-              {chainId === 11155111
-                ? "Sepolia Etherscan"
-                : chainId === 8453
-                ? "BaseScan"
-                : "Etherscan"}
-              上查看
-            </a>
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={isLoading || !tokenAddress || !toAddress || !amount}
-          className="w-full bg-purple-500 hover:bg-purple-600 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-        >
-          {isLoading && (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+          {/* 代币信息显示 */}
+          {tokenInfo && (
+            <div className="bg-gray-50 rounded-md p-4 space-y-2">
+              <h3 className="font-medium text-gray-900">代币信息</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600">名称:</span>
+                  <span className="ml-2 font-medium">{tokenInfo.name}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">符号:</span>
+                  <span className="ml-2 font-medium">{tokenInfo.symbol}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">精度:</span>
+                  <span className="ml-2 font-medium">{tokenInfo.decimals}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">总供应量:</span>
+                  <span className="ml-2 font-medium">
+                    {parseFloat(tokenInfo.totalSupply).toFixed(2)}
+                  </span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-600">我的余额:</span>
+                  <span className="ml-2 font-medium text-blue-600">
+                    {parseFloat(tokenInfo.balance).toFixed(6)}{" "}
+                    {tokenInfo.symbol}
+                  </span>
+                </div>
+              </div>
+            </div>
           )}
-          {isLoading ? "转账中..." : "发送代币转账"}
-        </button>
-      </form>
+
+          {/* 转账表单 */}
+          {tokenInfo && (
+            <form onSubmit={handleTransfer} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  接收地址
+                </label>
+                <input
+                  type="text"
+                  value={toAddress}
+                  onChange={(e) => setToAddress(e.target.value)}
+                  placeholder="0x..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  转账金额 ({tokenInfo.symbol})
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.0"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                  <p className="text-red-600">{error}</p>
+                </div>
+              )}
+
+              {txHash && (
+                <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                  <p className="text-green-600 mb-2">交易成功!</p>
+                  <p className="text-sm text-gray-600">
+                    交易哈希: <span className="font-mono">{txHash}</span>
+                  </p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? "处理中..." : "发送转账"}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   );
-}
+};

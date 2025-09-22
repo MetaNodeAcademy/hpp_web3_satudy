@@ -1,135 +1,110 @@
-# Viem Web3 功能实现
+# Web3 功能演示页面
 
-这个页面展示了如何使用 Viem 库在 Next.js 中实现完整的 Web3 功能。
-
-## 架构设计
-
-### 局部 Context 设计
-
-- **ViemContext** 只在 `/viem` 路由下生效
-- 通过 `src/app/viem/layout.tsx` 提供 ViemProvider
-- 不影响其他页面（如 wagmi、rainbowkit 页面）
-
-### 文件结构
-
-```
-src/app/viem/
-├── layout.tsx              # Viem 专用的 layout，提供 ViemProvider
-├── page.tsx                # 主页面
-├── components/             # 组件目录
-│   ├── WalletConnect.tsx   # 钱包连接组件
-│   ├── AccountInfo.tsx     # 账户信息展示
-│   ├── NativeTransfer.tsx  # ETH 转账
-│   ├── ERC20Transfer.tsx   # ERC-20 转账
-│   └── TransferLogs.tsx    # 事件监听
-└── README.md               # 说明文档
-```
+这是一个基于 Viem 库实现的 Web3 功能演示页面，包含以下功能：
 
 ## 功能特性
 
-### 1. 钱包连接
+### 1. 账户信息查询
 
-- 支持 MetaMask 钱包连接
-- 自动检测钱包连接状态
-- 支持账户切换和链切换
+- 查询连接钱包的 ETH 余额
+- 显示账户的 Nonce 值
+- 支持手动刷新账户信息
 
-### 2. 账户信息展示
+### 2. ETH 转账
 
-- 显示钱包地址（支持复制）
-- 显示 ETH 余额
-- 显示当前网络信息
-- 支持切换不同网络（主网、测试网、Base）
+- 实现账户之间的 ETH 转账
+- 自动估算 Gas 费用
+- 显示交易状态和哈希
 
-### 3. 原生代币转账
+### 3. ERC-20 代币操作
 
-- ETH 转账功能
-- 实时余额检查
-- 交易状态反馈
-- 支持在 Etherscan 上查看交易
+- 查询代币合约信息（名称、符号、精度、总供应量）
+- 查看用户代币余额
+- 实现代币转账功能
 
-### 4. ERC-20 代币转账
+### 4. Transfer 事件监听
 
-- 支持任意 ERC-20 代币转账
-- 预设常用代币地址（USDT、USDC、DAI、WETH）
-- 完整的错误处理
-
-### 5. Transfer 事件监听
-
-- 实时监听 ERC-20 代币的 Transfer 事件
-- 显示转账详情（发送方、接收方、数量）
-- 支持开始/停止监听
-- 事件日志展示
+- 监听代币合约的 Transfer 事件
+- 显示历史转账记录
+- 实时监听新的转账事件
 
 ## 技术实现
 
-### Context 模式
-
-使用 React Context 来管理局部的 Web3 状态：
-
-- `ViemContext`: 提供所有 Web3 相关的状态和方法
-- `useViem`: 自定义 Hook，方便在组件中使用
-- 只在 viem 路由下生效，不影响其他页面
-
-### 组件结构
-
-每个功能都封装成独立的组件，便于维护和复用：
-
-- 清晰的职责分离
-- 统一的错误处理
-- 一致的 UI 设计风格
+- **框架**: Next.js 15 + React 19
+- **Web3 库**: Viem 2.37.6
+- **网络**: Sepolia 测试网
+- **样式**: Tailwind CSS
 
 ## 使用方法
 
-1. **访问页面**
+1. **连接钱包**
 
-   - 直接访问 `/viem` 路由
-   - ViemProvider 会自动包装页面内容
+   - 点击"连接钱包"按钮
+   - 确保 MetaMask 已安装并切换到 Sepolia 测试网
 
-2. **连接钱包**
+2. **查看账户信息**
 
-   - 点击"连接 MetaMask"按钮
-   - 在 MetaMask 中确认连接
+   - 连接钱包后自动显示账户信息
+   - 可以点击"刷新信息"按钮更新数据
 
-3. **使用功能**
-   - 查看账户信息
-   - 进行转账操作
-   - 监听事件
+3. **进行 ETH 转账**
 
-## 学习要点
+   - 输入接收地址和转账金额
+   - 点击"发送转账"按钮
+   - 在 MetaMask 中确认交易
 
-### 1. Next.js 路由级 Layout
+4. **查询代币信息**
+
+   - 输入 ERC-20 代币合约地址
+   - 点击"查询"按钮获取代币信息
+
+5. **代币转账**
+
+   - 查询代币信息后，输入接收地址和转账金额
+   - 点击"发送转账"按钮
+
+6. **监听 Transfer 事件**
+   - 输入代币合约地址后，可以获取历史转账记录
+   - 点击"开始监听"按钮实时监听新事件
+
+## 配置说明
+
+### Infura 配置
+
+在 `src/contexts/ViemContext.tsx` 中，需要替换 Infura 密钥：
 
 ```typescript
-// src/app/viem/layout.tsx
-export default function ViemLayout({ children }) {
-  return <ViemProvider>{children}</ViemProvider>;
-}
+transport: http("https://sepolia.infura.io/v3/YOUR_INFURA_KEY");
 ```
 
-### 2. 局部状态管理
+### 测试代币
 
-- Context 只在特定路由下生效
-- 避免全局状态污染
-- 更好的代码组织
+可以使用以下 Sepolia 测试网上的代币合约地址进行测试：
 
-### 3. Viem 核心概念
+- USDC: `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`
+- DAI: `0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357`
 
-- 客户端创建和管理
-- 钱包连接和状态同步
-- 交易发送和事件监听
+## 注意事项
 
-## 优势
+1. 确保钱包已连接到 Sepolia 测试网
+2. 需要足够的测试 ETH 用于支付 Gas 费用
+3. 代币转账需要先有代币余额
+4. 事件监听功能需要有效的代币合约地址
 
-1. **模块化设计**: 每个功能独立，便于维护
-2. **局部作用域**: Context 只在需要的地方生效
-3. **类型安全**: 完整的 TypeScript 支持
-4. **错误处理**: 完善的错误处理和用户反馈
-5. **响应式设计**: 适配不同屏幕尺寸
+## 项目结构
 
-## 扩展建议
+```
+src/app/viem/
+├── components/
+│   ├── AccountInfo.tsx      # 账户信息组件
+│   ├── NativeTransfer.tsx   # ETH转账组件
+│   ├── ERC20Transfer.tsx    # 代币转账组件
+│   ├── TransferLogs.tsx     # 事件监听组件
+│   └── WalletConnect.tsx    # 钱包连接组件
+├── page.tsx                 # 主页面
+└── README.md               # 说明文档
+```
 
-1. **添加更多代币支持**
-2. **实现批量转账功能**
-3. **添加交易历史记录**
-4. **支持更多钱包类型**
-5. **添加多签钱包支持**
+## 开发说明
+
+所有组件都通过 `ViemContext` 共享同一个 viem 客户端实例，避免了重复初始化的问题。组件之间通过 props 传递状态，实现了良好的解耦和复用性。
