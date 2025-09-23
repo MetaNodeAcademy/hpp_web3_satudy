@@ -172,7 +172,7 @@ export const ERC20Transfer: React.FC<ERC20TransferProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-[#cbe2f3] rounded-lg shadow-md p-6">
       <h2 className="text-xl font-bold mb-4">ERC-20代币转账</h2>
 
       {!fromAddress && (

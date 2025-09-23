@@ -53,13 +53,11 @@ export default function ViemPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* 钱包连接 */}
-            <div className="lg:col-span-2">
-              <WalletConnect
-                onConnect={handleConnect}
-                onDisconnect={handleDisconnect}
-                connectedAddress={connectedAddress}
-              />
-            </div>
+            <WalletConnect
+              onConnect={handleConnect}
+              onDisconnect={handleDisconnect}
+              connectedAddress={connectedAddress}
+            />
 
             {/* 账户信息 */}
             <AccountInfo address={connectedAddress} />
@@ -68,39 +66,17 @@ export default function ViemPage() {
             <NativeTransfer fromAddress={connectedAddress} />
 
             {/* ERC-20代币转账 */}
-            <div className="lg:col-span-2">
-              <ERC20Transfer
-                fromAddress={connectedAddress}
-                onTokenInfoUpdate={handleTokenInfoUpdate}
-                onContractAddressChange={setContractAddress}
-              />
-            </div>
+            <ERC20Transfer
+              fromAddress={connectedAddress}
+              onTokenInfoUpdate={handleTokenInfoUpdate}
+              onContractAddressChange={setContractAddress}
+            />
 
             {/* Transfer事件监听 */}
-            <div className="lg:col-span-2">
-              <TransferLogs
-                contractAddress={contractAddress}
-                tokenInfo={tokenInfo}
-              />
-            </div>
-          </div>
-
-          {/* 使用说明 */}
-          <div className="mt-12 bg-blue-50 border border-blue-200 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-blue-900 mb-4">
-              使用说明
-            </h3>
-            <div className="space-y-2 text-sm text-blue-800">
-              <p>1. 首先点击"连接钱包"按钮连接您的MetaMask钱包</p>
-              <p>2. 连接后可以查看账户信息，包括ETH余额和Nonce</p>
-              <p>3. 可以进行ETH转账，输入接收地址和金额即可</p>
-              <p>4. 输入ERC-20代币合约地址查询代币信息，并进行代币转账</p>
-              <p>5. 可以监听代币合约的Transfer事件，查看实时转账记录</p>
-              <p className="mt-4 text-blue-600">
-                <strong>注意：</strong>
-                请确保您的钱包已切换到Sepolia测试网络，并拥有足够的测试ETH用于支付gas费用。
-              </p>
-            </div>
+            <TransferLogs
+              contractAddress={contractAddress}
+              tokenInfo={tokenInfo}
+            />
           </div>
         </div>
       </div>

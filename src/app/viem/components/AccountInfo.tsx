@@ -58,7 +58,7 @@ export const AccountInfo: React.FC<AccountInfoProps> = ({ address }) => {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-[#cbe2f3] rounded-lg shadow-md p-6">
       <h2 className="text-xl font-bold mb-4">账户信息</h2>
 
       {!address && (
